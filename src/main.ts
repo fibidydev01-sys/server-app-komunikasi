@@ -46,8 +46,12 @@ async function bootstrap() {
 
   // Add custom origin from env if provided
   const customOrigin = configService.get<string>('frontendOrigin');
-  if (customOrigin && !allowedOrigins.includes(customOrigin)) {
-    allowedOrigins.push(customOrigin);
+  if (customOrigin) {
+    // Remove trailing slash if present
+    const cleanOrigin = customOrigin.replace(/\/$/, '');
+    if (!allowedOrigins.includes(cleanOrigin)) {
+      allowedOrigins.push(cleanOrigin);
+    }
   }
 
   logger.log('🚀 Starting server...');
@@ -63,16 +67,12 @@ async function bootstrap() {
     }),
   );
 
-  // ✅ CORS configuration - Stricter in production
+  // ✅ CORS configuration - Allow requests without origin for health checks
   app.enableCors({
     origin: (origin, callback) => {
-      // ✅ Only allow no origin in development
+      // ✅ Allow requests without origin (health checks, direct browser access)
       if (!origin) {
-        if (!isProduction) {
-          return callback(null, true);
-        }
-        logger.warn('⚠️  Blocked request with no origin in production');
-        return callback(new Error('Origin required'));
+        return callback(null, true);
       }
 
       if (allowedOrigins.includes(origin)) {
