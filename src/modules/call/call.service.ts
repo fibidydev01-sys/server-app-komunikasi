@@ -37,12 +37,13 @@ export class CallService {
       throw new ForbiddenException('Cannot call this user');
     }
 
+    // ✅ FIX: Set status to RINGING (not INITIATED!)
     const call = await this.prisma.call.create({
       data: {
         callerId,
         receiverId: dto.receiverId,
         type: dto.type,
-        status: CallStatus.INITIATED,
+        status: CallStatus.RINGING, // ✅ CHANGED from INITIATED
       },
       include: {
         caller: {
@@ -82,11 +83,14 @@ export class CallService {
       throw new ForbiddenException('Only receiver can answer the call');
     }
 
+    // ✅ FIX: Allow INITIATED or RINGING
     if (
       call.status !== CallStatus.INITIATED &&
       call.status !== CallStatus.RINGING
     ) {
-      throw new BadRequestException('Call cannot be answered');
+      throw new BadRequestException(
+        `Call cannot be answered. Current status: ${call.status}`,
+      );
     }
 
     const updatedCall = await this.prisma.call.update({
