@@ -1,0 +1,350 @@
+// ================================================
+// COMPLETE PRISMA SCHEMA - ALL FEATURES
+// Friend System + Status + Calls + Settings + Profile
+// ================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ================================================
+// ENUMS
+// ================================================
+
+enum RequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum StatusType {
+  TEXT
+  IMAGE
+  VIDEO
+}
+
+enum CallType {
+  VOICE
+  VIDEO
+}
+
+enum CallStatus {
+  INITIATED
+  RINGING
+  ANSWERED
+  ENDED
+  MISSED
+  REJECTED
+  BUSY
+}
+
+enum LastSeenPrivacy {
+  EVERYONE
+  CONTACTS
+  NOBODY
+}
+
+enum ProfilePhotoPrivacy {
+  EVERYONE
+  CONTACTS
+  NOBODY
+}
+
+enum AboutPrivacy {
+  EVERYONE
+  CONTACTS
+  NOBODY
+}
+
+enum StatusPrivacyType {
+  ALL
+  CONTACTS
+  EXCEPT
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+// ================================================
+// USER MODEL (COMPLETE)
+// ================================================
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  username     String?  @unique
+  password     String
+  avatar       String?
+  about        String?  // Bio/About me
+  gender       Gender?
+  profilePhoto String?  // Full size profile photo
+  lastSeen     DateTime?
+  isOnline     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Chat Relations
+  createdChats  Chat[]    @relation("CreatedChats")
+  participantIn Chat[]    @relation("ChatParticipants")
+  sentMessages  Message[]
+
+  // Friend System Relations
+  sentRequests     FriendRequest[] @relation("SentRequests")
+  receivedRequests FriendRequest[] @relation("ReceivedRequests")
+  contacts         Contact[]       @relation("UserContacts")
+  contactOf        Contact[]       @relation("ContactOf")
+
+  // Status/Story Relations
+  statuses    Status[]     @relation("UserStatuses")
+  statusViews StatusView[] @relation("StatusViewers")
+
+  // Call Relations
+  callerCalls   Call[] @relation("CallerCalls")
+  receiverCalls Call[] @relation("ReceiverCalls")
+
+  // Settings Relation
+  settings UserSettings?
+
+  // Media Relations
+  uploadedMedia Media[] @relation("UserMedia")
+
+  @@map("users")
+}
+
+// ================================================
+// FRIEND REQUEST SYSTEM
+// ================================================
+
+model FriendRequest {
+  id         String        @id @default(cuid())
+  senderId   String
+  receiverId String
+  status     RequestStatus @default(PENDING)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  sender   User @relation("SentRequests", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, receiverId])
+  @@map("friend_requests")
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  userId    String
+  contactId String
+  isBlocked Boolean  @default(false)
+  nickname  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User @relation("UserContacts", fields: [userId], references: [id], onDelete: Cascade)
+  contact User @relation("ContactOf", fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contactId])
+  @@map("contacts")
+}
+
+// ================================================
+// CHAT SYSTEM
+// ================================================
+
+model Chat {
+  id          String   @id @default(cuid())
+  isGroup     Boolean  @default(false)
+  groupName   String?
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy    User      @relation("CreatedChats", fields: [createdById], references: [id], onDelete: Cascade)
+  participants User[]    @relation("ChatParticipants")
+  messages     Message[]
+
+  @@map("chats")
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  content   String
+  type      String   @default("text")
+  image     String?
+  read      Boolean  @default(false)
+  chatId    String
+  senderId  String
+  replyToId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  chat    Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender  User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo Message? @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies Message[] @relation("MessageReplies")
+
+  @@map("messages")
+}
+
+// ================================================
+// STATUS/STORY SYSTEM
+// ================================================
+
+model Status {
+  id              String     @id @default(cuid())
+  userId          String
+  type            StatusType @default(TEXT)
+  content         String?
+  mediaUrl        String?
+  backgroundColor String?    @default("#000000")
+  viewCount       Int        @default(0)
+  expiresAt       DateTime   // Auto-delete after 24 hours
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  user    User         @relation("UserStatuses", fields: [userId], references: [id], onDelete: Cascade)
+  views   StatusView[]
+  privacy StatusPrivacy?
+
+  @@map("statuses")
+}
+
+model StatusView {
+  id       String   @id @default(cuid())
+  statusId String
+  viewerId String
+  viewedAt DateTime @default(now())
+
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  viewer User   @relation("StatusViewers", fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@unique([statusId, viewerId])
+  @@map("status_views")
+}
+
+model StatusPrivacy {
+  id               String            @id @default(cuid())
+  statusId         String            @unique
+  type             StatusPrivacyType @default(CONTACTS)
+  exceptUserIds    String[]          @default([]) // Array of user IDs to exclude
+  onlyUserIds      String[]          @default([]) // Array of user IDs to include (for custom list)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+
+  @@map("status_privacy")
+}
+
+// ================================================
+// CALL SYSTEM
+// ================================================
+
+model Call {
+  id         String     @id @default(cuid())
+  callerId   String
+  receiverId String
+  type       CallType
+  status     CallStatus @default(INITIATED)
+  duration   Int?       // Duration in seconds
+  startedAt  DateTime?
+  endedAt    DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  caller   User @relation("CallerCalls", fields: [callerId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceiverCalls", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@map("calls")
+}
+
+// ================================================
+// USER SETTINGS
+// ================================================
+
+model UserSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // Privacy Settings
+  showOnlineStatus Boolean             @default(true)
+  showLastSeen     LastSeenPrivacy     @default(EVERYONE)
+  showProfilePhoto ProfilePhotoPrivacy @default(EVERYONE)
+  showAbout        AboutPrivacy        @default(EVERYONE)
+  showStatus       StatusPrivacyType   @default(CONTACTS)
+
+  // Notification Settings
+  messageNotifications Boolean @default(true)
+  soundEnabled         Boolean @default(true)
+  vibrationEnabled     Boolean @default(true)
+  showPreview          Boolean @default(true)
+  notificationTone     String  @default("default")
+
+  // Call Settings
+  callNotifications Boolean @default(true)
+  callRingtone      String  @default("default")
+
+  // Security Settings
+  twoFactorEnabled Boolean @default(false)
+  twoFactorSecret  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+// ================================================
+// MEDIA SYSTEM
+// ================================================
+
+model Media {
+  id           String   @id @default(cuid())
+  userId       String
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int      // Size in bytes
+  url          String
+  thumbnailUrl String?
+  width        Int?
+  height       Int?
+  duration     Int?     // For videos (in seconds)
+  createdAt    DateTime @default(now())
+
+  user User @relation("UserMedia", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("media")
+}
+
+// ================================================
+// ACTIVE SESSIONS (for security)
+// ================================================
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  token        String   @unique
+  deviceName   String?
+  deviceType   String?
+  ipAddress    String?
+  userAgent    String?
+  isActive     Boolean  @default(true)
+  lastActiveAt DateTime @default(now())
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@map("sessions")
+}
